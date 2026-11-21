@@ -25,6 +25,17 @@ st.set_page_config(
 AI_AVATAR = "🤖"
 USER_AVATAR = "👤"
 
+
+def render_sources(sources):
+    if sources:
+        with st.expander(f"📄 Retrieved Context ({len(sources)} chunks)"):
+            for i, source in enumerate(sources):
+                st.caption(f"Chunk {i + 1}")
+                st.info(source)
+    else:
+        st.caption("ℹ️ No context retrieved — conversational response.")
+
+
 # --- SESSION MANAGEMENT ---
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -38,7 +49,10 @@ with st.sidebar:
     st.title("🧠 Agent OS")
     st.markdown("---")
 
-    base_url = "https://rag-api-5548705938.us-central1.run.app"
+    base_url = os.getenv(
+        "BACKEND_URL",
+        "https://rag-api-5548705938.us-central1.run.app",
+    ).strip().rstrip("/")
 
     st.markdown("---")
     st.success(f"Logfire: {LOGFIRE_STATUS}")
@@ -58,6 +72,8 @@ for message in st.session_state.messages:
     avatar = AI_AVATAR if message["role"] == "assistant" else USER_AVATAR
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
+        if message["role"] == "assistant" and "sources" in message:
+            render_sources(message["sources"])
 
 # Chat Input
 if prompt := st.chat_input("Ask about your documentation..."):
@@ -78,10 +94,7 @@ if prompt := st.chat_input("Ask about your documentation..."):
                         payload = {"q": prompt, "thread_id": st.session_state.session_id}
                         response = requests.post(url, json=payload, timeout=60)
 
-                        if response.status_code != 200:
-                            st.error(f"Backend Error: {response.status_code} - {response.text}")
-                            st.stop()
-
+                        response.raise_for_status()
                         data = response.json()
 
                     steps = data.get("thought_process", [])
@@ -107,15 +120,10 @@ if prompt := st.chat_input("Ask about your documentation..."):
                 time.sleep(0.005)
             answer_placeholder.markdown(full_answer)
 
-            # Sources — outside status so they're visible after it collapses
-            sources = data.get("sources", [])
-            if sources:
-                with st.expander(f"📄 Retrieved Context ({len(sources)} chunks)"):
-                    for i, source in enumerate(sources):
-                        st.caption(f"Chunk {i + 1}")
-                        st.info(source)
-            else:
-                st.caption("ℹ️ No context retrieved — conversational response.")
+            sources = data.get("sources") or []
+            render_sources(sources)
 
-            st.session_state.messages.append({"role": "assistant", "content": full_answer})
+            st.session_state.messages.append(
+                {"role": "assistant", "content": full_answer, "sources": sources}
+            )
             logfire.info("✅ Chat cycle completed successfully.")
