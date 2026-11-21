@@ -4,6 +4,7 @@ import requests
 import time
 import uuid
 import logfire
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 # Initialize Logfire
@@ -54,9 +55,15 @@ with st.sidebar:
     st.title("🧠 Agent OS")
     st.markdown("---")
 
-    base_url = os.getenv(
-        "BACKEND_URL",
-        "https://rag-api-5548705938.us-central1.run.app",
+    try:
+        configured_backend_url = st.secrets.get("BACKEND_URL")
+    except StreamlitSecretNotFoundError:
+        configured_backend_url = None
+
+    base_url = (
+        configured_backend_url
+        or os.getenv("BACKEND_URL")
+        or "https://rag-api-k2ponyhk6a-uc.a.run.app"
     ).strip().rstrip("/")
 
     st.markdown("---")
