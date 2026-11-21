@@ -26,14 +26,19 @@ AI_AVATAR = "🤖"
 USER_AVATAR = "👤"
 
 
-def render_sources(sources):
+def render_sources(sources, retrieval_reported=False):
     if sources:
         with st.expander(f"📄 Retrieved Context ({len(sources)} chunks)"):
             for i, source in enumerate(sources):
                 st.caption(f"Chunk {i + 1}")
                 st.info(source)
+    elif retrieval_reported:
+        st.warning(
+            "The backend reported retrieved context but returned no chunks. "
+            "Verify that the deployed backend returns the `sources` field."
+        )
     else:
-        st.caption("ℹ️ No context retrieved — conversational response.")
+        st.caption("ℹ️ No relevant context was retrieved for this question.")
 
 
 # --- SESSION MANAGEMENT ---
@@ -73,7 +78,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
         if message["role"] == "assistant" and "sources" in message:
-            render_sources(message["sources"])
+            render_sources(message["sources"], message.get("retrieval_reported", False))
 
 # Chat Input
 if prompt := st.chat_input("Ask about your documentation..."):
@@ -112,6 +117,12 @@ if prompt := st.chat_input("Ask about your documentation..."):
             # Answer streaming — outside status so it's always visible
             answer_placeholder = st.empty()
             full_answer = data.get("answer", "No response.")
+            sources = data.get("sources") or []
+            steps = data.get("thought_process", [])
+            retrieval_reported = any(
+                "context retrieved" in str(step).casefold()
+                for step in steps
+            )
 
             curr_text = ""
             for char in full_answer:
@@ -120,10 +131,14 @@ if prompt := st.chat_input("Ask about your documentation..."):
                 time.sleep(0.005)
             answer_placeholder.markdown(full_answer)
 
-            sources = data.get("sources") or []
-            render_sources(sources)
+            render_sources(sources, retrieval_reported)
 
             st.session_state.messages.append(
-                {"role": "assistant", "content": full_answer, "sources": sources}
+                {
+                    "role": "assistant",
+                    "content": full_answer,
+                    "sources": sources,
+                    "retrieval_reported": retrieval_reported,
+                }
             )
             logfire.info("✅ Chat cycle completed successfully.")
